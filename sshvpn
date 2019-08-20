@@ -1,0 +1,83 @@
+VPS="VPS的IP地址"
+RUSER="VPS用户名"
+IDFILE="/root/sshvpn/私钥文件名"
+
+setup_remove() {
+ # do some clean-up stuff
+ iptables -t nat -F
+ iptables -t mangle -F
+ ip route delete default table china
+ ip rule delete fwmark 22 table china
+ ip route delete default via 192.168.200.1 dev tun0
+ ip route delete 192.168.200.1
+ ip route delete 119.29.29.29
+ ip route delete $VPS
+ kill `ps -ef | grep "ssh -NTCf" | awk 'NR==1{ print $2 }'`
+ ip link set tun0 down
+ ip tuntap delete tun0 mode tun
+}
+
+setup_add() {
+ 
+ ip tuntap add tun0 mode tun
+ ip link set tun0 up
+ ip addr add 192.168.200.2/32 peer 192.168.200.1 dev tun0
+
+ for i in $( seq 9 -1 0 )
+ do
+     
+     kill `ps -ef | grep "ssh -NTCf" | awk 'NR==1{ print $2 }'`
+     ssh -T -i "$IDFILE" "$RUSER"@"$VPS" "~/clean_up.sh"
+
+     ssh -NTCf -w 0:0 -i "$IDFILE" "$RUSER"@"$VPS" 
+     RETURN_CODE=$?
+     
+     if [ ! $RETURN_CODE ] ; then
+                 setup_remove
+             exit 1
+     fi
+
+  STATUS=`ip link show tun0 | awk '{ print $9 }'`
+  
+     if [ "$STATUS" = "UP" ] ; then
+   break
+     fi
+ done
+
+ # china DNS server
+ ip route add 114.114.114.114 via "$new_routers"
+ ip route add $VPS via "$new_routers"
+
+ ip route add default via 192.168.200.1 dev tun0 
+ ip rule add fwmark 22 table china 
+ ip route add default via "$new_routers" dev eth0 table china 
+
+ iptables -t nat -F
+ iptables -t mangle -F
+  
+ iptables -t nat -A POSTROUTING -d "$VPS" -o eth0 -j MASQUERADE  
+ iptables -t nat -A POSTROUTING -d 114.114.114.114 -o eth0 -j MASQUERADE  
+ iptables -t nat -A POSTROUTING -s 192.168.240.0/24 -d "$new_network_number"/"$new_subnet_cidr" -o eth0 -j MASQUERADE 
+ iptables -t nat -A POSTROUTING -o eth0 -m mark --mark 0x16 -j MASQUERADE 
+ iptables -t nat -A POSTROUTING -s 192.168.240.0/24 -o tun0 -j MASQUERADE 
+
+ iptables-restore /root/sshvpn/it_rules 
+
+
+}
+
+
+if ([ "$interface" = "eth0" ]); then
+
+ case $reason in
+         BOUND|RENEW|REBIND|REBOOT)
+                 setup_add
+                 ;;
+         EXPIRE|FAIL|RELEASE|STOPPED)
+                 setup_remove
+                 ;;
+ esac
+
+fi
+
+exit 0

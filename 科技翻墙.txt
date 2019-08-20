@@ -1,0 +1,43 @@
+香港服务器远程密码：617296
+root密码:Nopwd@server
+
+vps服务器设置
+安装iptables，并开启
+一、打开IPv4转发
+/etc/sysctl.conf net.ipv4.ip_forward=1
+sysctl -p
+cat /proc/sys/net/ipv4/ip_forward 验证
+二、设置iptables源地址转发
+iptables -t nat -A POSTROUTING -s 192.168.1.0/24 -o enp1s0 -j MASQUERADE  把192.168.0.1/24段的报文全部经过网卡enp1s0 转发
+三、打开SSH隧道功能
+/etc/ssh/sshd_config PermitTunnel yes
+重启sshd服务 service sshd restart
+四、私钥连接vps
+在服务器端ssh-keygen -t rsa -b 2048
+在.ssh目录下 cat id_rsa.pub >> authorized_keys
+在dns服务器端 下载私钥id_rsa   scp root@118.24.77.34:~/.ssh/id_rsa ./ 
+
+chmod 400 id_rsa
+ssh -i id_rsa root@118.24.77.34
+
+五、ssh_tun_server.sh
+-bash: ./test.sh: /bin/sh^M: bad interpreter: No such file or directory  
+1.首先用vi命令打开文件
+2.在vi命令模式中使用 :set ff 命令
+3.修改文件format为unix   :set ff=unix
+然后可执行
+
+六、channel 0: open failed: administratively prohibited: open failed
+执行ssh -NTCf -w 0:0 -i storm root@118.24.77.34时出现以上错误
+DNS端：
+配置1： vi /etc/ssh/sshd_config 修改内容： AllowTcpForwarding yes GatewayPorts yes 生效： /etc/rc.d/init.d/sshd restart 
+配置2： vi /etc/sysctl.conf 修改内容： net.ipv4.ip_forward = 1 生效： sudo sysctl -p 或 /sbin/sysctl -e -p /etc/sysctl.conf 即可
+vps端：
+PermitTunnel yes
+
+七、curl: (6) Could not resolve host: www.baidu.com; Unknown error
+
+
+八、参考文档
+    1. 基于IPTABLES MARK机制实现策略路由（http://www.just4coding.com/blog/2016/12/23/iptables-mark-and-polices-based-route/）
+    2. 利用shadowsocks打造局域网翻墙透明网关（https://medium.com/@oliviaqrs/%E5%88%A9%E7%94%A8shadowsocks%E6%89%93%E9%80%A0%E5%B1%80%E5%9F%9F%E7%BD%91%E7%BF%BB%E5%A2%99%E9%80%8F%E6%98%8E%E7%BD%91%E5%85%B3-fb82ccb2f729）
